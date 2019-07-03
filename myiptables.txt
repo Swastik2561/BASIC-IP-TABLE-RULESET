@@ -1,0 +1,57 @@
+#To blacklist; replace with the ip address needed to block  
+    iptables -I INPUT -s 192.168.1.100 -j DROP 
+#To block outgoing connections on a specific port:
+iptables -A OUTPUT -p tcp --dport xxx -j DROP
+#Allow Specific Network Range on Particular Port on IPtables
+iptables -A OUTPUT -p tcp -d 192.168.100.0/24 --dport 22 -j ACCEPT
+#Setup Port Forwarding in IPtables:
+iptables -t nat -A PREROUTING -i eth0 -p tcp --dport 25 -j REDIRECT --to-port 2525
+#Allow loopback Access
+iptables -A INPUT -i lo -j ACCEPT
+ iptables -A OUTPUT -o lo -j ACCEPT
+#Keep a Log of Dropped Network Packets on IPtables
+iptables -A INPUT -i eth0 -j LOG --log-prefix "IPtables dropped packets:"
+#Block Access to Specific MAC Address on IPtables
+iptables -A INPUT -m mac --mac-source 00:00:00:00:00:00 -j DROP
+# Limit the Number of Concurrent Connections per IP Address
+ iptables -A INPUT -p tcp --syn --dport 22 -m connlimit --connlimit-above 3 -j REJECT
+#Allow Established and Related Connections
+iptables -A INPUT -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
+iptables -A OUTPUT -m conntrack --ctstate ESTABLISHED -j ACCEPT
+
+
+
+# For custom bandwidth allocation we have to use tc along with iptables...use the following procedure :
+#HTTP Outbound Traffic Shaping
+
+#First , delete existing rules for eth1:
+ /sbin/tc qdisc del dev eth1 root
+
+#Turn on queuing discipline, enter:
+ /sbin/tc qdisc add dev eth1 root handle 1:0 htb default 10
+
+#Define a class with limitations i.e. set the allowed bandwidth to 512 Kilobytes and burst bandwidth to 640 Kilobytes for port 80:
+ /sbin/tc class add dev eth1 parent 1:0 classid 1:10 htb rate 512kbps ceil 640kbps prio 0
+
+#Please note that port 80 is NOT defined anywhere in above class. You will use iptables mangle rule as follows:
+ /sbin/iptables -A OUTPUT -t mangle -p tcp --sport 80 -j MARK --set-mark 10
+
+#To save your iptables rules, enter (RHEL specific command):
+ /sbin/service iptables save
+
+#Finally, assign it to appropriate qdisc:
+ tc filter add dev eth1 parent 1:0 prio 0 protocol ip handle 10 fw flowid 1:10
+
+
+
+
+
+
+#For time dependent feature the general syntex is :
+iptables RULE -m time --timestart TIME --timestop TIME --days DAYS -j ACTION
+#example 
+iptables -A INPUT -p tcp -s 0/0 --sport 513:65535 -d 202.54.1.20 --dport 22 -m state --state NEW,ESTABLISHED -m time --timestart 09:00 --timestop 18:00 --days Mon,Tue,Wed,Thu,Fri -j ACCEPT
+iptables -A OUTPUT -p tcp -s 202.54.1.20 --sport 22 -d 0/0 --dport 513:65535 -m state --state ESTABLISHED -m time --timestart 09:00 --timestop 18:00 --days Mon,Tue,Wed,Thu,Fri -j ACCEPT
+#    –timestart TIME : Time start value . Format is 00:00-23:59 (24 hours format)
+   # –timestop TIME : Time stop value.
+   # –days DAYS : Match only if today is one of the given days. (format: Mon,Tue,Wed,Thu,Fri,Sat,Sun ; default everyday)
